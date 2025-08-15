@@ -1,16 +1,21 @@
 import os
 import math
-
-
+import torch
+import os
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+torch.cuda.empty_cache()  # Frees unused memory
+# print(torch.cuda.is_available())
 class Config():
     def __init__(self) -> None:
         # PATH settings
         # Make up your file system as: SYS_HOME_DIR/codes/dis/BiRefNet, SYS_HOME_DIR/datasets/dis/xx, SYS_HOME_DIR/weights/xx
-        self.sys_home_dir = [os.path.expanduser('~'), '/workspace'][1]   # Default, custom
-        self.data_root_dir = os.path.join(self.sys_home_dir, 'datasets/dis')
-
+        # Make up your file system as: SYS_HOME_DIR/codes/dis/BiRefNet, SYS_HOME_DIR/datasets/dis/xx, SYS_HOME_DIR/weights/xx
+        # self.sys_home_dir = [os.path.expanduser('~'), '/\birefnet'][1]   # Default, custom
+        self.sys_home_dir = "/home/ml2/Documents/birefnet"
+        self.data_root_dir = os.path.join(self.sys_home_dir, '1k_samples')
+        # print(self.data_root_dir)
         # TASK settings
-        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting'][0]
+        self.task = ['DIS5K', 'COD', 'HRSOD', 'General', 'General-2K', 'Matting',"1k_samples"][6]
         self.testsets = {
             # Benchmarks
             'DIS5K': ','.join(['DIS-VD', 'DIS-TE1', 'DIS-TE2', 'DIS-TE3', 'DIS-TE4'][:1]),
@@ -20,8 +25,20 @@ class Config():
             'General': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
             'General-2K': ','.join(['DIS-VD', 'TE-P3M-500-NP']),
             'Matting': ','.join(['TE-P3M-500-NP', 'TE-AM-2k']),
+            "1k_samples": ",".join(['validation'])
+            # "bgremove_bg_removal_all_in_one": ",".join(['validation'])  # Placeholder for future tasks
+            # Placeholder for future tasks
         }[self.task]
-        datasets_all = '+'.join([ds for ds in (os.listdir(os.path.join(self.data_root_dir, self.task)) if os.path.isdir(os.path.join(self.data_root_dir, self.task)) else []) if ds not in self.testsets.split(',')])
+        # print(torch.cuda.is_available())
+                
+        # datasets_all = '+'.join([ds for ds in (os.listdir(os.path.join(self.data_root_dir, self.task)) if os.path.isdir(os.path.join(self.data_root_dir, self.task)) else []) if ds not in self.testsets.split(',')])
+        datasets_all = '+'.join([
+        ds for ds in os.listdir(os.path.join(self.data_root_dir, self.task))
+        if os.path.isdir(os.path.join(self.data_root_dir, self.task, ds)) and ds == 'training'
+        ])
+        # print(f"Datasets available for {self.task}: {datasets_all}")
+        # print(datasets_all)
+
         self.training_set = {
             'DIS5K': ['DIS-TR', 'DIS-TR+DIS-TE1+DIS-TE2+DIS-TE3+DIS-TE4'][0],
             'COD': 'TR-COD10K+TR-CAMO',
@@ -29,10 +46,18 @@ class Config():
             'General': datasets_all,
             'General-2K': datasets_all,
             'Matting': datasets_all,
+            "1k_samples": datasets_all,
+            # "bgremove_bg_removal_all_in_one":datasets_all
         }[self.task]
-
+        # 
+        # print(datasets_all)
         # Data settings
-        self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei. Can be overwritten by dynamic_size in training.
+        # self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei. Can be overwritten by dynamic_size in training.
+        
+        # Data settings
+        # self.size = (1024, 1024) if self.task not in ['General-2K'] else (2560, 1440)   # wid, hei. Can be overwritten by dynamic_size in training.
+        
+        self.size= (512, 512)
         self.dynamic_size = [None, ((512-256, 2048+256), (512-256, 2048+256))][0]    # wid, hei. It might cause errors in using compile.
         self.background_color_synthesis = False             # whether to use pure bg color to replace the original backgrounds.
 
@@ -42,7 +67,6 @@ class Config():
         self.compile = True                             # 1. Trigger CPU memory leak in some extend, which is an inherent problem of PyTorch.
                                                         #   Machines with > 70GB CPU memory can run the whole training on DIS5K with default setting.
                                                         # 2. Higher PyTorch version may fix it: https://github.com/pytorch/pytorch/issues/119607.
-                                                        # 3. But compile in 2.0.1 < Pytorch < 2.5.0 seems to bring no acceleration for training.
         self.precisionHigh = True
 
         # MODEL settings
@@ -67,10 +91,11 @@ class Config():
                 'General': -20,
                 'General-2K': -20,
                 'Matting': -10,
+                "1k_samples": -50
             }[self.task]
-        ][1]    # choose 0 to skip
-        self.lr = (1e-4 if 'DIS5K' in self.task else 1e-5) * math.sqrt(self.batch_size / 4)     # DIS needs high lr to converge faster. Adapt the lr linearly
-        self.num_workers = max(4, self.batch_size)          # will be decrease to min(it, batch_size) at the initialization of the data_loader
+        ][0]    # choose 0 to skip
+        self.lr = 8.660254037844387e-06     # DIS needs high lr to converge faster. Adapt the lr linearly
+        self.num_workers = 1      # will be decrease to min(it, batch_size) at the initialization of the data_loader
 
         # Backbone settings
         self.bb = [
@@ -79,7 +104,7 @@ class Config():
             'swin_v1_b', 'swin_v1_l',               # 5-bs9, 6-bs4
             'pvt_v2_b0', 'pvt_v2_b1',               # 7, 8
             'pvt_v2_b2', 'pvt_v2_b5',               # 9-bs10, 10-bs5
-        ][6]
+        ][3]
         self.lateral_channels_in_collection = {
             'vgg16': [512, 512, 256, 128], 'vgg16bn': [512, 512, 256, 128], 'resnet50': [2048, 1024, 512, 256],
             'pvt_v2_b2': [512, 320, 128, 64], 'pvt_v2_b5': [512, 320, 128, 64],
@@ -158,7 +183,8 @@ class Config():
         }
 
         # PATH settings - inactive
-        self.weights_root_dir = os.path.join(self.sys_home_dir, 'weights/cv')
+        # print(self.sys_home_dir , "home_dir")
+        self.weights_root_dir = os.path.join(self.sys_home_dir, 'BiRefNet/weights/cv')
         self.weights = {
             'pvt_v2_b2': os.path.join(self.weights_root_dir, 'pvt_v2_b2.pth'),
             'pvt_v2_b5': os.path.join(self.weights_root_dir, ['pvt_v2_b5.pth', 'pvt_v2_b5_22k.pth'][0]),
@@ -171,12 +197,14 @@ class Config():
         }
 
         # Callbacks - inactive
-        self.verbose_eval = True
+        self.verbose_eval = False
         self.only_S_MAE = False
         self.SDPA_enabled = False    # Bugs. Slower and errors occur in multi-GPUs
 
         # others
         self.device = [0, 'cpu'][0]     # .to(0) == .to('cuda:0')
+        # self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        # print(self.device)
 
         self.batch_size_valid = 1
         self.rand_seed = 7
@@ -184,9 +212,10 @@ class Config():
         if run_sh_file:
             with open(run_sh_file[0], 'r') as f:
                 lines = f.readlines()
-                self.save_last = int([l.strip() for l in lines if "'{}')".format(self.task) in l and 'val_last=' in l][0].split('val_last=')[-1].split()[0])
-                self.save_step = int([l.strip() for l in lines if "'{}')".format(self.task) in l and 'step=' in l][0].split('step=')[-1].split()[0])
-
+                # self.save_last = int([l.strip() for l in lines if "'{}')".format(self.task) in l and 'val_last=' in l][0].split('val_last=')[-1].split()[0])
+                self.save_last = 200
+                # self.save_step = int([l.strip() for l in lines if "'{}')".format(self.task) in l and 'step=' in l][0].split('step=')[-1].split()[0])
+                self.save_step = 1
 
 # Return task for choosing settings in shell scripts.
 if __name__ == '__main__':
@@ -197,9 +226,11 @@ if __name__ == '__main__':
     parser.add_argument('--print_task', action='store_true', help='print task name')
     parser.add_argument('--print_testsets', action='store_true', help='print validation set')
     args = parser.parse_args()
-
+    # data_class = Config()
+    # print(data_class)
     config = Config()
     for arg_name, arg_value in args._get_kwargs():
         if arg_value:
             print(config.__getattribute__(arg_name[len('print_'):]))
+
 

@@ -132,20 +132,25 @@ class MyData(data.Dataset):
         #         _label = cv2.resize(_label, (2048, 2048), interpolation=cv2.INTER_LINEAR)
 
         # At present, we use fixed sizes in inference, instead of consistent dynamic size with training.
-        if self.is_train:
-            if config.dynamic_size is None:
+        try:
+            if self.is_train:
+                if config.dynamic_size is None:
+                    image, label = self.transform_image(image), self.transform_label(label)
+            else:
+                size_div_32 = (int(image.size[0] // 32 * 32), int(image.size[1] // 32 * 32))
+                if image.size != size_div_32:
+                    image = image.resize(size_div_32)
+                    label = label.resize(size_div_32)
                 image, label = self.transform_image(image), self.transform_label(label)
-        else:
-            size_div_32 = (int(image.size[0] // 32 * 32), int(image.size[1] // 32 * 32))
-            if image.size != size_div_32:
-                image = image.resize(size_div_32)
-                label = label.resize(size_div_32)
-            image, label = self.transform_image(image), self.transform_label(label)
 
-        if self.is_train:
-            return image, label, class_label
-        else:
-            return image, label, self.label_paths[index]
+            if self.is_train:
+                return image, label, class_label
+            else:
+                return image, label, self.label_paths[index]
+            
+        except Exception as e:
+            print(e)
+            return None  
 
     def __len__(self):
         return len(self.image_paths)
@@ -162,7 +167,7 @@ def custom_collate_fn(batch):
     transform_image = transforms.Compose([
         transforms.Resize(data_size[::-1]),
         transforms.ToTensor(),
-        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
+        # transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
     ])
     transform_label = transforms.Compose([
         transforms.Resize(data_size[::-1]),

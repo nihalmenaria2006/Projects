@@ -5,29 +5,39 @@ import argparse
 import torch
 import torch.nn as nn
 import torch.optim as optim
-if tuple(map(int, torch.__version__.split('+')[0].split(".")[:3])) >= (2, 5, 0):
-    os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
-
+# if tuple(map(int, torch.__version__.split('+')[0].split(".")[:3])) >= (2, 5, 0):
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'expandable_segments:True'
+# from torchsummary import summary
 from config import Config
 from loss import PixLoss, ClsLoss
 from dataset import MyData
 from models.birefnet import BiRefNet, BiRefNetC2F
 from utils import Logger, AverageMeter, set_seed, check_state_dict
 
+
+
+print(torch.cuda.is_available())
+
 from torch.utils.data.distributed import DistributedSampler
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.distributed import init_process_group, destroy_process_group
 
+# /bin/python3 /home/ml2/Documents/birefnet/BiRefNet/train.py --resume "/home/ml2/Documents/birefnet/BiRefNet_lite-general-2K-epoch_232.pth"
+# /bin/python3 /home/ml2/Documents/birefnet/BiRefNet/train.py --resume "/home/ml2/Documents/birefnet/BiRefNet/ckpt/tmp/epoch_234.pth"
+
+# /bin/python3 /home/ml2/Documents/birefnet/BiRefNet/inference.py 
 
 parser = argparse.ArgumentParser(description='')
-parser.add_argument('--resume', default=None, type=str, help='path to latest checkpoint')
-parser.add_argument('--epochs', default=120, type=int)
+parser.add_argument('--resume', default="", type=str, help='path to latest checkpoint')
+parser.add_argument('--epochs', default=400, type=int)
 parser.add_argument('--ckpt_dir', default='ckpt/tmp', help='Temporary folder')
 parser.add_argument('--dist', default=False, type=lambda x: x == 'True')
 parser.add_argument('--use_accelerate', action='store_true', help='`accelerate launch --multi_gpu train.py --use_accelerate`. Use accelerate for training, good for FP16/BF16/...')
 args = parser.parse_args()
 
 config = Config()
+
+
 
 if args.use_accelerate:
     from accelerate import Accelerator, utils
@@ -43,7 +53,7 @@ if args.use_accelerate:
     args.dist = False
 
 # DDP
-to_be_distributed = args.dist
+to_be_distributed = False
 if to_be_distributed:
     init_process_group(backend="nccl", timeout=datetime.timedelta(seconds=3600*10))
     device = int(os.environ["LOCAL_RANK"])
@@ -68,9 +78,9 @@ logger_loss_idx = 1
 # logger.info("Model details:"); logger.info(model)
 # if args.use_accelerate and accelerator.mixed_precision != 'no':
 #     config.compile = False
-logger.info("datasets: load_all={}, compile={}.".format(config.load_all, config.compile))
-logger.info("Other hyperparameters:"); logger.info(args)
-print('batch size:', config.batch_size)
+# logger.info("datasets: load_all={}, compile={}.".format(config.load_all, config.compile))
+# logger.info("Other hyperparameters:"); logger.info(args)
+# print('batch size:', config.batch_size)
 
 from dataset import custom_collate_fn
 
@@ -78,12 +88,12 @@ def prepare_dataloader(dataset: torch.utils.data.Dataset, batch_size: int, to_be
     # Prepare dataloaders
     if to_be_distributed:
         return torch.utils.data.DataLoader(
-            dataset=dataset, batch_size=batch_size, num_workers=min(config.num_workers, batch_size), pin_memory=True,
+            dataset=dataset, batch_size=4,
             shuffle=False, sampler=DistributedSampler(dataset), drop_last=True, collate_fn=custom_collate_fn if is_train and config.dynamic_size else None
         )
     else:
         return torch.utils.data.DataLoader(
-            dataset=dataset, batch_size=batch_size, num_workers=min(config.num_workers, batch_size), pin_memory=True,
+            dataset=dataset, batch_size=4,
             shuffle=is_train, sampler=None, drop_last=True, collate_fn=custom_collate_fn if is_train and config.dynamic_size else None
         )
 
@@ -120,6 +130,8 @@ def init_models_optimizers(epochs, to_be_distributed):
             model = DDP(model, device_ids=[device])
         else:
             model = model.to(device)
+    # model = model.to("cpu")
+    print("model created")
     if config.compile:
         model = torch.compile(model, mode=['default', 'reduce-overhead', 'max-autotune'][0])
     if config.precisionHigh:
@@ -127,7 +139,7 @@ def init_models_optimizers(epochs, to_be_distributed):
 
     # Setting optimizer
     if config.optimizer == 'AdamW':
-        optimizer = optim.AdamW(params=model.parameters(), lr=config.lr, weight_decay=1e-2)
+        optimizer = optim.AdamW(params=model.parameters(), lr=config.lr, weight_decay=0.01)
     elif config.optimizer == 'Adam':
         optimizer = optim.Adam(params=model.parameters(), lr=config.lr, weight_decay=0)
     lr_scheduler = torch.optim.lr_scheduler.MultiStepLR(
@@ -169,6 +181,11 @@ class Trainer:
             class_labels = batch[2].to(device)
         self.optimizer.zero_grad()
         scaled_preds, class_preds_lst = self.model(inputs)
+
+        # Example: for a batch of 3x224x224 images
+        # print("model summary")
+        # summary(self.model, input_size=(3, 2560, 1440))
+
         if config.out_ref:
             (outs_gdt_pred, outs_gdt_label), scaled_preds = scaled_preds
             for _idx, (_gdt_pred, _gdt_label) in enumerate(zip(outs_gdt_pred, outs_gdt_label)):
@@ -227,7 +244,7 @@ class Trainer:
         info_loss = f'@==Final== Epoch[{epoch}/{args.epochs}]  Training Loss: {self.loss_log.avg:.5g}  '
         logger.info(info_loss)
 
-        self.lr_scheduler.step()
+        # self.lr_scheduler.step()
         return self.loss_log.avg
 
 
@@ -240,13 +257,18 @@ def main():
 
     for epoch in range(epoch_st, args.epochs+1):
         train_loss = trainer.train_epoch(epoch)
-        # Save checkpoint
+
         if epoch >= args.epochs - config.save_last and epoch % config.save_step == 0:
             if args.use_accelerate:
                 state_dict = trainer.model.state_dict()
             else:
                 state_dict = trainer.model.module.state_dict() if to_be_distributed else trainer.model.state_dict()
-            torch.save(state_dict, os.path.join(args.ckpt_dir, 'epoch_{}.pth'.format(epoch)))
+            # torch.save(state_dict, os.path.join(args.ckpt_dir, 'epoch_{}.pth'.format(epoch)))
+            try:
+                torch.save(state_dict, os.path.join(args.ckpt_dir, f'epoch_{epoch}.pth'))
+                print(f"Checkpoint saved for epoch {epoch}")
+            except Exception as e:
+                print(f"Failed to save checkpoint: {e}")
     if to_be_distributed:
         destroy_process_group()
 

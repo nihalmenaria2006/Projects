@@ -4,6 +4,8 @@ import torch.nn.functional as F
 from einops import rearrange
 from kornia.filters import laplacian
 from huggingface_hub import PyTorchModelHubMixin
+import torch._dynamo
+torch._dynamo.config.suppress_errors = True
 
 from config import Config
 from dataset import class_labels_TR_sorted
@@ -72,7 +74,7 @@ class BiRefNet(
 
         if self.config.freeze_bb:
             # Freeze the backbone...
-            print(self.named_parameters())
+            # print(self.named_parameters())
             for key, value in self.named_parameters():
                 if 'bb.' in key and 'refiner.' not in key:
                     value.requires_grad = False

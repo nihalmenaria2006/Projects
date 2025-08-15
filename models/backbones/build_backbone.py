@@ -27,18 +27,27 @@ def build_backbone(bb_name, pretrained=True, params_settings=''):
 
 def load_weights(model, model_name):
     save_model = torch.load(config.weights[model_name], map_location='cpu', weights_only=True)
+    
     model_dict = model.state_dict()
-    state_dict = {k: v if v.size() == model_dict[k].size() else model_dict[k] for k, v in save_model.items() if k in model_dict.keys()}
-    # to ignore the weights with mismatched size when I modify the backbone itself.
+    # print(f"Loaded keys: {list(save_model.keys())[:5]} ...")  # preview first few keys
+    # print(f"Expected keys (from model): {list(model.state_dict().keys())[:5]} ...")
+
+    # Try flat loading
+    state_dict = {k: v for k, v in save_model.items() if k in model_dict and v.size() == model_dict[k].size()}
+
+    # If no match found, try nested structure (e.g., 'state_dict', 'model', etc.)
     if not state_dict:
-        save_model_keys = list(save_model.keys())
-        sub_item = save_model_keys[0] if len(save_model_keys) == 1 else None
-        state_dict = {k: v if v.size() == model_dict[k].size() else model_dict[k] for k, v in save_model[sub_item].items() if k in model_dict.keys()}
-        if not state_dict or not sub_item:
-            print('Weights are not successfully loaded. Check the state dict of weights file.')
-            return None
-        else:
-            print('Found correct weights in the "{}" item of loaded state_dict.'.format(sub_item))
+        for key in save_model:
+            if isinstance(save_model[key], dict):
+                nested_dict = save_model[key]
+                state_dict = {k: v for k, v in nested_dict.items() if k in model_dict and v.size() == model_dict[k].size()}
+                if state_dict:
+                    print(f'Found matching weights under "{key}"')
+                    break
+
+    if not state_dict:
+        print('❌ No matching weights found. Please check weight file structure.')
+        return model
     model_dict.update(state_dict)
     model.load_state_dict(model_dict)
     return model

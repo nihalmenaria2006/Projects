@@ -14,6 +14,9 @@ def do_eval(args):
     # evaluation for whole dataset
     # dataset first in evaluation
     for _data_name in args.data_lst.split('+'):
+        # args.data_lst
+        print(args.pred_root ,args.model_lst[0])
+        exit()
         pred_data_dir =  sorted(glob(os.path.join(args.pred_root, args.model_lst[0], _data_name)))
         if not pred_data_dir:
             print('Skip dataset {}.'.format(_data_name))

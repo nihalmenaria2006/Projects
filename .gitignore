@@ -149,3 +149,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+ckpt/
+ckpt2/
+e_preds/
+e_preds/
+

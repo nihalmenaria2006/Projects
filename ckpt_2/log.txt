@@ -1,0 +1,1 @@
+2025-08-12 13:55:45,433 INFO => loading checkpoint '/home/ml2/Documents/birefnet/BiRefNet_lite-general-2K-epoch_232.pth'

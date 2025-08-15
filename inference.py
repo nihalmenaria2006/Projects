@@ -54,6 +54,7 @@ def main(args):
     device = config.device
     if args.ckpt_folder:
         print('Testing with models in {}'.format(args.ckpt_folder))
+        print("if block")
     else:
         print('Testing with model {}'.format(args.ckpt))
 
@@ -66,6 +67,8 @@ def main(args):
         key=lambda x: int(x.split('epoch_')[-1].split('.pth')[0]),
         reverse=True
     )
+    print(weights_lst,"---------------------------------------------")
+    # exit()
     try:
         if args.resolution in [None, 'None', 0, '']:
             # Use original resolution for inference.
@@ -85,6 +88,7 @@ def main(args):
             dataset=MyData(testset, data_size=data_size, is_train=False),
             batch_size=config.batch_size_valid, shuffle=False, num_workers=config.num_workers, pin_memory=True
         )
+        print(data_loader_test)
         for weights in weights_lst:
             if int(weights.strip('.pth').split('epoch_')[-1]) % 1 != 0:
                 continue
@@ -102,11 +106,16 @@ def main(args):
 
 if __name__ == '__main__':
     # Parameter from command line
+    print(sorted(glob(os.path.join('ckpt', '*.pth'))))
+    print("-----------------------------------")
+    
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('--ckpt', type=str, help='model folder')
-    parser.add_argument('--ckpt_folder', default=sorted(glob(os.path.join('ckpt', '*')))[-1], type=str, help='model folder')
+    # parser.add_argument('--ckpt_folder', default=sorted(glob(os.path.join('ckpt', '*')))[-1], type=str, help='model folder')
+    parser.add_argument('--ckpt_folder', default=os.path.join('ckpt', "tmp"), type=str, help='model checkpoint file')
+
     parser.add_argument('--pred_root', default='e_preds', type=str, help='Output folder')
-    parser.add_argument('--resolution', default='default', type=str, help='WeixHei')
+    parser.add_argument('--resolution', default=((64, 64), (64, 64)), type=str, help='WeixHei')
     parser.add_argument('--testsets',
                         default=config.testsets.replace(',', '+'),
                         type=str,
