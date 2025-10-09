@@ -1,2 +1,2 @@
 # BirefNet
-my own biref repo
+my own projects repo
