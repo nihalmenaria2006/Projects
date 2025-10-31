@@ -1,3 +1,4 @@
 # Ignore any folder named data at any depth
 **/data/
 **/data.zip
+**r.py
